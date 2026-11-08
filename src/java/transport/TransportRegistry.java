@@ -9,6 +9,9 @@ public class TransportRegistry {
     private final List<Transport> transports = new ArrayList<>();
 
     public synchronized void add(Transport transport) {
+        if (contains(transport.getId())) {
+            return;
+        }
         transports.add(transport);
     }
 

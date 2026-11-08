@@ -75,7 +75,7 @@ public class Transport {
         if (amount <= 0) {
             return false;
         }
-        if (cargoQuantity + amount > capacity) {
+        if (amount > capacity - cargoQuantity) {
             return false;
         }
         cargoQuantity = cargoQuantity + amount;
