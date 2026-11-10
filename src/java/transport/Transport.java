@@ -21,7 +21,7 @@ public class Transport {
         this.departureTime = departureTime;
     }
 
-    public synchronized String getId() {
+    public String getId() {
         return id;
     }
 

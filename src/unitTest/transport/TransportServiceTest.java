@@ -144,4 +144,49 @@ class TransportServiceTest {
         String result = direct.viewCargo("T001");
         assertEquals("T001 cargo=25/100", result);
     }
+
+    @Test
+    void transferFull() {
+        Transport from = new Transport("T001", 100, "2026-11-03T14:30");
+        from.transitionTo(TransportState.DOCKED);
+        from.addCargo(40);
+
+        Transport to = new Transport("T002", 50, "2026-11-03T15:00");
+        to.transitionTo(TransportState.DOCKED);
+        to.addCargo(45);
+
+        TransportRegistry registry = new TransportRegistry();
+        registry.add(from);
+        registry.add(to);
+
+        FakeEventLogger logger = new FakeEventLogger();
+        TransportService service = new TransportService(registry, logger);
+
+        // Only 5 units fit, so the full 10 should go back to the source.
+        String result = service.transferCargo("T001", "T002", 10);
+
+        assertEquals("Cannot transfer 10 units: insufficient capacity in T002", result);
+        assertEquals(40, from.getCargoQuantity());
+        assertEquals(45, to.getCargoQuantity());
+        assertTrue(logger.getMessages().isEmpty());
+    }
+
+    @Test
+    void transferToSelf() {
+        Transport transport = new Transport("T001", 100, "2026-11-03T14:30");
+        transport.transitionTo(TransportState.DOCKED);
+        transport.addCargo(30);
+
+        TransportRegistry registry = new TransportRegistry();
+        registry.add(transport);
+
+        FakeEventLogger logger = new FakeEventLogger();
+        TransportService service = new TransportService(registry, logger);
+
+        String result = service.transferCargo("T001", "T001", 10);
+
+        assertEquals("Cannot transfer cargo to the same transport", result);
+        assertEquals(30, transport.getCargoQuantity());
+        assertTrue(logger.getMessages().isEmpty());
+    }
 }

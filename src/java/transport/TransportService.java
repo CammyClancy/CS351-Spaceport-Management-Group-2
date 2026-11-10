@@ -39,10 +39,10 @@ public class TransportService {
             return "Transport not found: " + transportId;
         }
         if (!canDoCargoOps(transport)) {
-            return "Cant unload cargo as transport is " + transport.getState();
+            return "Cannot unload cargo: transport is " + transport.getState();
         }
         if (!transport.removeCargo(amount)) {
-            return "Cant unload " + amount + " units: insufficient cargo";
+            return "Cannot unload " + amount + " units: insufficient cargo";
         }
         eventLogger.log("Unloaded " + amount + " units from " + transportId);
         return "Unloaded " + amount + " units from " + transportId;
@@ -59,13 +59,17 @@ public class TransportService {
         if (to == null) {
             return "Transport not found: " + toId;
         }
+        if (from == to) {
+            return "Cannot transfer cargo to the same transport";
+        }
         if (!canDoCargoOps(from) || !canDoCargoOps(to)) {
-            return "Cant transfer as one or both transports not in a valid state";
+            return "Cannot transfer cargo: one or both transports are in an invalid state";
         }
         if (!from.removeCargo(amount)) {
-            return "Cant transfer " + amount + " units: insufficient cargo in " + fromId;
+            return "Cannot transfer " + amount + " units: insufficient cargo in " + fromId;
         }
         if (!to.addCargo(amount)) {
+            // Put the cargo back because the destination cannot take it.
             from.addCargo(amount);
             return "Cannot transfer " + amount + " units: insufficient capacity in " + toId;
         }
@@ -113,7 +117,7 @@ public class TransportService {
     private boolean canDoCargoOps(Transport transport) {
         TransportState state = transport.getState();
         return state == TransportState.DOCKED
-            || state == TransportState.SERVICING
-            || state == TransportState.READY;
+                || state == TransportState.SERVICING
+                || state == TransportState.READY;
     }
 }
