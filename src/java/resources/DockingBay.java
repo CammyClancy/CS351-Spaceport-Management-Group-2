@@ -1,6 +1,10 @@
 package resources;
 
-public class DockingBay {
+import java.io.Serializable;
+
+public class DockingBay implements Serializable {
+    private static final long serialVersionUID = 1L;
+
     private final String id;
     private BayState state = BayState.AVAILABLE;
     private String transportId;
@@ -25,6 +29,12 @@ public class DockingBay {
         this.transportId = transportId;
         state = BayState.OCCUPIED;
     }
+
+    synchronized void release() {
+        transportId = null;
+        state = BayState.AVAILABLE;
+    }
+
     synchronized boolean close() {
         if (state != BayState.AVAILABLE) {
             return false;
