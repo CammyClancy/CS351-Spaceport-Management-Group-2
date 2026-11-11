@@ -7,6 +7,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 // Tests the TransportService: load, unload, transfer cargo and view commands.
@@ -48,21 +49,20 @@ class TransportServiceTest {
         FakeEventLogger logger = new FakeEventLogger();
         TransportService direct = new TransportService(registry, logger);
 
-        String result = direct.loadCargo("T999", 10);
-        assertEquals("Transport not found: T999", result);
+        assertThrows(IllegalArgumentException.class, () -> direct.loadCargo("T999", 10));
+        assertTrue(logger.getMessages().isEmpty());
     }
 
     @Test
     void loadCargoFailsWhenTransportNotInValidState() {
         Transport t = new Transport("T001", 100, "2026-11-03T14:30");
-        // T001 starts in WAITING state, cargo ops not allowed
         TransportRegistry registry = new TransportRegistry();
         registry.add(t);
         FakeEventLogger logger = new FakeEventLogger();
         TransportService direct = new TransportService(registry, logger);
 
-        String result = direct.loadCargo("T001", 10);
-        assertEquals("Cannot load cargo: transport is WAITING", result);
+        assertThrows(IllegalArgumentException.class, () -> direct.loadCargo("T001", 10));
+        assertTrue(logger.getMessages().isEmpty());
     }
 
     @Test
@@ -74,8 +74,7 @@ class TransportServiceTest {
         FakeEventLogger logger = new FakeEventLogger();
         TransportService direct = new TransportService(registry, logger);
 
-        String result = direct.loadCargo("T001", 150);
-        assertEquals("Cannot load 150 units: exceeds capacity", result);
+        assertThrows(IllegalArgumentException.class, () -> direct.loadCargo("T001", 150));
         assertEquals(0, t.getCargoQuantity());
         assertTrue(logger.getMessages().isEmpty());
     }
@@ -106,8 +105,7 @@ class TransportServiceTest {
         FakeEventLogger logger = new FakeEventLogger();
         TransportService direct = new TransportService(registry, logger);
 
-        String result = direct.unloadCargo("T001", 20);
-        assertEquals("Cannot unload 20 units: insufficient cargo", result);
+        assertThrows(IllegalArgumentException.class, () -> direct.unloadCargo("T001", 20));
         assertEquals(10, t.getCargoQuantity());
         assertTrue(logger.getMessages().isEmpty());
     }

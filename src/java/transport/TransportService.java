@@ -6,7 +6,8 @@ import java.util.List;
 import transport.collaborator.EventLogger;
 
 // Handles cargo operations: load, unload and transfer.
-// All methods are synchronized for thread safety.
+// Each method locks the affected transports directly so independent
+// transports can progress concurrently without unnecessary blocking.
 public class TransportService {
     private final TransportRegistry registry;
     private final EventLogger eventLogger;
@@ -17,98 +18,115 @@ public class TransportService {
     }
 
     // Loads cargo onto a transport.
-    public synchronized String loadCargo(String transportId, int amount) {
+    public String loadCargo(String transportId, int amount) {
         Transport transport = registry.get(transportId);
         if (transport == null) {
-            return "Transport not found: " + transportId;
+            throw new IllegalArgumentException("Transport not found: " + transportId);
         }
-        if (!canDoCargoOps(transport)) {
-            return "Cannot load cargo: transport is " + transport.getState();
+        synchronized (transport) {
+            if (!canDoCargoOps(transport)) {
+                throw new IllegalArgumentException("Cannot load cargo: transport is " + transport.getState());
+            }
+            if (!transport.addCargo(amount)) {
+                throw new IllegalArgumentException("Cannot load " + amount + " units: exceeds capacity");
+            }
+            eventLogger.log("Loaded " + amount + " units into " + transportId);
+            return "Loaded " + amount + " units into " + transportId;
         }
-        if (!transport.addCargo(amount)) {
-            return "Cannot load " + amount + " units: exceeds capacity";
-        }
-        eventLogger.log("Loaded " + amount + " units into " + transportId);
-        return "Loaded " + amount + " units into " + transportId;
     }
 
     // Unloads cargo from a transport.
-    public synchronized String unloadCargo(String transportId, int amount) {
+    public String unloadCargo(String transportId, int amount) {
         Transport transport = registry.get(transportId);
         if (transport == null) {
-            return "Transport not found: " + transportId;
+            throw new IllegalArgumentException("Transport not found: " + transportId);
         }
-        if (!canDoCargoOps(transport)) {
-            return "Cannot unload cargo: transport is " + transport.getState();
+        synchronized (transport) {
+            if (!canDoCargoOps(transport)) {
+                throw new IllegalArgumentException("Cannot unload cargo: transport is " + transport.getState());
+            }
+            if (!transport.removeCargo(amount)) {
+                throw new IllegalArgumentException("Cannot unload " + amount + " units: insufficient cargo");
+            }
+            eventLogger.log("Unloaded " + amount + " units from " + transportId);
+            return "Unloaded " + amount + " units from " + transportId;
         }
-        if (!transport.removeCargo(amount)) {
-            return "Cannot unload " + amount + " units: insufficient cargo";
-        }
-        eventLogger.log("Unloaded " + amount + " units from " + transportId);
-        return "Unloaded " + amount + " units from " + transportId;
     }
 
     // Moves cargo from one transport to another.
     // Either both transports change or neither does.
-    public synchronized String transferCargo(String fromId, String toId, int amount) {
+    public String transferCargo(String fromId, String toId, int amount) {
+        if (fromId.equals(toId)) {
+            throw new IllegalArgumentException("Cannot transfer cargo: source and destination must be different transports");
+        }
         Transport from = registry.get(fromId);
         if (from == null) {
-            return "Transport not found: " + fromId;
+            throw new IllegalArgumentException("Transport not found: " + fromId);
         }
         Transport to = registry.get(toId);
         if (to == null) {
-            return "Transport not found: " + toId;
+            throw new IllegalArgumentException("Transport not found: " + toId);
         }
-        if (from == to) {
-            return "Cannot transfer cargo to the same transport";
+        Transport first = fromId.compareTo(toId) < 0 ? from : to;
+        Transport second = fromId.compareTo(toId) < 0 ? to : from;
+        synchronized (first) {
+            synchronized (second) {
+                if (!canDoCargoOps(from) || !canDoCargoOps(to)) {
+                    throw new IllegalArgumentException("Cannot transfer: one or both transports not in a valid state");
+                }
+                if (!from.removeCargo(amount)) {
+                    throw new IllegalArgumentException("Cannot transfer " + amount + " units: insufficient cargo in " + fromId);
+                }
+                if (!to.addCargo(amount)) {
+                    from.addCargo(amount);
+                    throw new IllegalArgumentException("Cannot transfer " + amount + " units: insufficient capacity in " + toId);
+                }
+                eventLogger.log("Transferred " + amount + " units from " + fromId + " to " + toId);
+                return "Transferred " + amount + " units from " + fromId + " to " + toId;
+            }
         }
-        if (!canDoCargoOps(from) || !canDoCargoOps(to)) {
-            return "Cannot transfer cargo: one or both transports are in an invalid state";
-        }
-        if (!from.removeCargo(amount)) {
-            return "Cannot transfer " + amount + " units: insufficient cargo in " + fromId;
-        }
-        if (!to.addCargo(amount)) {
-            // Put the cargo back because the destination cannot take it.
-            from.addCargo(amount);
-            return "Cannot transfer " + amount + " units: insufficient capacity in " + toId;
-        }
-        eventLogger.log("Transferred " + amount + " units from " + fromId + " to " + toId);
-        return "Transferred " + amount + " units from " + fromId + " to " + toId;
     }
 
     // Shows cargo for one transport.
-    public synchronized String viewCargo(String transportId) {
+    public String viewCargo(String transportId) {
         Transport transport = registry.get(transportId);
         if (transport == null) {
-            return "Transport not found: " + transportId;
+            throw new IllegalArgumentException("Transport not found: " + transportId);
         }
-        return transportId + " cargo=" + transport.getCargoQuantity() + "/" + transport.getCapacity();
+        synchronized (transport) {
+            return transportId + " cargo=" + transport.getCargoQuantity() + "/" + transport.getCapacity();
+        }
     }
 
     // Shows state and cargo for one transport.
-    public synchronized String viewTransport(String transportId) {
+    public String viewTransport(String transportId) {
         Transport transport = registry.get(transportId);
         if (transport == null) {
-            return "Transport not found: " + transportId;
+            throw new IllegalArgumentException("Transport not found: " + transportId);
         }
-        return transportId + " " + transport.getState() + " bay=" + transport.getBayId() + " cargo=" + transport.getCargoQuantity();
+        synchronized (transport) {
+            return transportId + " " + transport.getState() + " bay=" + transport.getBayId() + " cargo=" + transport.getCargoQuantity();
+        }
     }
 
     // Returns a summary line for every transport.
-    public synchronized List<String> getAllTransportsSummary() {
+    public List<String> getAllTransportsSummary() {
         List<String> lines = new ArrayList<>();
         for (Transport transport : registry.getAll()) {
-            lines.add(transport.getId() + " " + transport.getState() + " cargo=" + transport.getCargoQuantity() + "/" + transport.getCapacity());
+            synchronized (transport) {
+                lines.add(transport.getId() + " " + transport.getState() + " cargo=" + transport.getCargoQuantity() + "/" + transport.getCapacity());
+            }
         }
         return lines;
     }
 
     // Returns a cargo summary line for every transport.
-    public synchronized List<String> getAllCargoSummary() {
+    public List<String> getAllCargoSummary() {
         List<String> lines = new ArrayList<>();
         for (Transport transport : registry.getAll()) {
-            lines.add(transport.getId() + " cargo=" + transport.getCargoQuantity() + "/" + transport.getCapacity());
+            synchronized (transport) {
+                lines.add(transport.getId() + " cargo=" + transport.getCargoQuantity() + "/" + transport.getCapacity());
+            }
         }
         return lines;
     }
@@ -117,7 +135,7 @@ public class TransportService {
     private boolean canDoCargoOps(Transport transport) {
         TransportState state = transport.getState();
         return state == TransportState.DOCKED
-                || state == TransportState.SERVICING
-                || state == TransportState.READY;
+            || state == TransportState.SERVICING
+            || state == TransportState.READY;
     }
 }
