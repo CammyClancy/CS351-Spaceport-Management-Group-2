@@ -8,11 +8,12 @@ import java.util.List;
 public class TransportRegistry {
     private final List<Transport> transports = new ArrayList<>();
 
-    public synchronized void add(Transport transport) {
+    public synchronized boolean add(Transport transport) {
         if (contains(transport.getId())) {
-            return;
+            return false;
         }
         transports.add(transport);
+        return true;
     }
 
     public synchronized Transport get(String id) {
