@@ -1,17 +1,21 @@
 package transport;
 
+import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.List;
 
 // Stores all transports in a list.
 // All methods are synchronized so multiple threads can use it safely.
-public class TransportRegistry {
+public class TransportRegistry implements Serializable {
+    private static final long serialVersionUID = 1L;
+
     private final List<Transport> transports = new ArrayList<>();
 
     public synchronized boolean add(Transport transport) {
         if (contains(transport.getId())) {
             return false;
         }
+
         transports.add(transport);
         return true;
     }

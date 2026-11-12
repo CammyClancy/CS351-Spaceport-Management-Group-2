@@ -1,8 +1,12 @@
 package transport;
 
+import java.io.Serializable;
+
 // Represents one space transport.
 // Holds its id, state, bay, team, capacity, cargo and departure time.
-public class Transport {
+public class Transport implements Serializable {
+    private static final long serialVersionUID = 1L;
+
     private final String id;
     private TransportState state;
     private String bayId;
@@ -21,7 +25,7 @@ public class Transport {
         this.departureTime = departureTime;
     }
 
-    public synchronized String getId() {
+    public String getId() {
         return id;
     }
 
