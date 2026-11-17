@@ -58,7 +58,7 @@ public class ResourceService {
     }
 
     public String allocateBay(String transportId, String bayId) {
-        // Cargo operations use this same service lock.
+        // Keep the bay availability check and both assignment updates together.
         synchronized (transportService) {
             Transport transport = registry.get(transportId);
             if (transport == null) {

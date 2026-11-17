@@ -378,7 +378,12 @@ class ResourceServiceTest {
         try {
             Future<String> load = pool.submit(() -> {
                 start.await();
-                return cargo.loadCargo("T001", 10);
+
+                try {
+                    return cargo.loadCargo("T001", 10);
+                } catch (IllegalArgumentException exception) {
+                    return exception.getMessage();
+                }
             });
 
             Future<Void> depart = pool.submit(() -> {

@@ -79,4 +79,50 @@ class ResourceCommandHandlerTest {
         assertEquals("BAY_01 AVAILABLE, BAY_02 AVAILABLE", bays.getMessage());
     }
 
+    @Test
+    void teamCommands() throws ProtocolException {
+        send(CommandType.ALLOCATE_BAY, "T001", "BAY_01");
+
+        Response assigned = send(CommandType.ASSIGN_TEAM, "T001", "TEAM_A");
+        assertTrue(assigned.isSuccess());
+        assertEquals("Assigned TEAM_A to T001", assigned.getMessage());
+
+        Response teams = send(CommandType.VIEW_TEAMS);
+        assertTrue(teams.isSuccess());
+        assertEquals("TEAM_A BUSY (T001)", teams.getMessage());
+
+        Response completed = send(CommandType.COMPLETE_MAINTENANCE, "T001");
+        assertTrue(completed.isSuccess());
+        assertEquals("Completed maintenance on T001 and released TEAM_A",
+                completed.getMessage());
+
+        teams = send(CommandType.VIEW_TEAMS);
+        assertTrue(teams.isSuccess());
+        assertEquals("TEAM_A AVAILABLE", teams.getMessage());
+    }
+
+    @Test
+    void swapAndViewLog() throws ProtocolException {
+        send(CommandType.ALLOCATE_BAY, "T001", "BAY_01");
+        send(CommandType.ALLOCATE_BAY, "T002", "BAY_02");
+
+        Response swap = send(CommandType.EXCHANGE_BAYS, "T001", "T002");
+        assertTrue(swap.isSuccess());
+        assertEquals("Exchanged BAY_01 and BAY_02 for T001 and T002",
+                swap.getMessage());
+
+        Response bays = send(CommandType.VIEW_BAYS);
+        assertTrue(bays.isSuccess());
+        assertEquals("BAY_01 OCCUPIED (T002), BAY_02 OCCUPIED (T001)",
+                bays.getMessage());
+
+        Response history = send(CommandType.VIEW_LOG);
+        assertTrue(history.isSuccess());
+
+        // Two allocations followed by one exchange.
+        List<String> entries = history.getLines();
+        assertEquals(3, entries.size());
+        assertTrue(entries.get(2).endsWith(" " + swap.getMessage()));
+    }
+
 }
