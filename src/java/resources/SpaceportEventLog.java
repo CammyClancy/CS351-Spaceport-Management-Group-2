@@ -1,6 +1,8 @@
 package resources;
 
 import java.io.Serializable;
+import java.io.IOException;
+import java.io.ObjectOutputStream;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -18,5 +20,10 @@ public class SpaceportEventLog implements EventLogger, Serializable {
 
     public synchronized List<String> getEntries() {
         return new ArrayList<>(entries);
+    }
+
+    private synchronized void writeObject(ObjectOutputStream output)
+            throws IOException {
+        output.defaultWriteObject();
     }
 }

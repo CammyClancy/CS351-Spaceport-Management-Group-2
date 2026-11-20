@@ -12,7 +12,6 @@ import communication.protocol.Response;
 import communication.protocol.Role;
 import transport.Transport;
 import transport.TransportRegistry;
-import transport.TransportService;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -29,15 +28,15 @@ class ResourceCommandHandlerTest {
         registry.add(new Transport("T002", 80, "2026-11-10T15:00"));
 
         SpaceportEventLog log = new SpaceportEventLog();
-        TransportService cargo = new TransportService(registry, log);
-        DockingBay secondBay = new DockingBay("BAY_02");
         DockingBay firstBay = new DockingBay("BAY_01");
+        DockingBay secondBay = new DockingBay("BAY_02");
         ResourceService resources = new ResourceService(List.of(firstBay, secondBay),
-                List.of(new MaintenanceTeam("TEAM_A")), registry, cargo, log);
+                List.of(new MaintenanceTeam("TEAM_A")), registry, log, message -> {});
         handler = new ResourceCommandHandler(resources, log);
     }
 
-    private Response send(CommandType type, String... arguments) throws ProtocolException {
+    private Response send(CommandType type, String... arguments)
+            throws ProtocolException {
         return handler.handle(new Request(type, arguments), client);
     }
 
@@ -55,6 +54,7 @@ class ResourceCommandHandlerTest {
     @Test
     void addTransport() throws ProtocolException {
         Response reply = send(CommandType.ADD_TRANSPORT, "T003", "120", "2026-11-10T16:00");
+
         assertTrue(reply.isSuccess());
         assertEquals("Added transport T003", reply.getMessage());
 
@@ -124,5 +124,4 @@ class ResourceCommandHandlerTest {
         assertEquals(3, entries.size());
         assertTrue(entries.get(2).endsWith(" " + swap.getMessage()));
     }
-
 }

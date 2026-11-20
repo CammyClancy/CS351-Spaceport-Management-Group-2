@@ -2,6 +2,7 @@ package resources;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
@@ -17,6 +18,7 @@ import transport.collaborator.EventLogger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class ResourceServiceTest {
     private final Transport first = new Transport("T001", 100, "2026-11-10T14:00");
@@ -24,7 +26,9 @@ class ResourceServiceTest {
     private final DockingBay bay = new DockingBay("BAY_01");
     private final DockingBay secondBay = new DockingBay("BAY_02");
     private final MaintenanceTeam team = new MaintenanceTeam("TEAM_A");
-    private final List<String> events = new ArrayList<>();
+    // These lists can safely receive messages from different threads.
+    private final List<String> events = Collections.synchronizedList(new ArrayList<>());
+    private final List<String> notifications = Collections.synchronizedList(new ArrayList<>());
     private final ResourceService service;
     private final TransportService cargo;
     private final TransportRegistry registry = new TransportRegistry();
@@ -37,7 +41,7 @@ class ResourceServiceTest {
         cargo = new TransportService(registry, logger);
 
         service = new ResourceService(List.of(bay, secondBay), List.of(team),
-                registry, cargo, logger);
+                registry, logger, notifications::add);
     }
 
     @Test
@@ -50,6 +54,7 @@ class ResourceServiceTest {
         assertEquals(BayState.OCCUPIED, bay.getState());
         assertEquals("T001", bay.getTransportId());
         assertEquals(List.of(result), events);
+        assertEquals(events, notifications);
     }
 
     @Test
@@ -58,9 +63,12 @@ class ResourceServiceTest {
         assertEquals(BayState.CLOSED, bay.getState());
 
         // A waiting transport cannot take a closed bay.
-        assertEquals("Bay is unavailable: BAY_01", service.allocateBay("T001", "BAY_01"));
+        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class,
+                () -> service.allocateBay("T001", "BAY_01"));
+        assertEquals("Bay is unavailable: BAY_01", exception.getMessage());
         assertEquals(TransportState.WAITING, first.getState());
         assertNull(first.getBayId());
+        assertEquals(List.of("Closed BAY_01"), notifications);
 
         assertEquals("Reopened BAY_01", service.reopenBay("BAY_01"));
         assertEquals(BayState.AVAILABLE, bay.getState());
@@ -68,29 +76,34 @@ class ResourceServiceTest {
 
         // Once reopened, the same bay can be allocated.
         assertEquals("Allocated BAY_01 to T001", service.allocateBay("T001", "BAY_01"));
+        assertEquals(events, notifications);
     }
 
     @Test
     void closeOccupied() {
         service.allocateBay("T001", "BAY_01");
 
-        assertEquals("Cannot close bay: OCCUPIED", service.closeBay("BAY_01"));
+        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class,
+                () -> service.closeBay("BAY_01"));
+        assertEquals("Cannot close bay: OCCUPIED", exception.getMessage());
         assertEquals(BayState.OCCUPIED, bay.getState());
         assertEquals("T001", bay.getTransportId());
         assertEquals("BAY_01", first.getBayId());
         assertEquals(List.of("Allocated BAY_01 to T001"), events);
+        assertEquals(events, notifications);
     }
 
     @Test
     void bayTaken() {
         service.allocateBay("T001", "BAY_01");
-        String result = service.allocateBay("T002", "BAY_01");
-
-        assertEquals("Bay is unavailable: BAY_01", result);
+        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class,
+                () -> service.allocateBay("T002", "BAY_01"));
+        assertEquals("Bay is unavailable: BAY_01", exception.getMessage());
         assertEquals("T001", bay.getTransportId());
         assertEquals(TransportState.WAITING, second.getState());
         assertNull(second.getBayId());
-        assertEquals(1, events.size());
+        assertEquals(List.of("Allocated BAY_01 to T001"), events);
+        assertEquals(events, notifications);
     }
 
     @Test
@@ -101,12 +114,20 @@ class ResourceServiceTest {
         try {
             Future<String> firstRequest = pool.submit(() -> {
                 start.await();
-                return service.allocateBay("T001", "BAY_01");
+                try {
+                    return service.allocateBay("T001", "BAY_01");
+                } catch (IllegalArgumentException exception) {
+                    return exception.getMessage();
+                }
             });
 
             Future<String> secondRequest = pool.submit(() -> {
                 start.await();
-                return service.allocateBay("T002", "BAY_01");
+                try {
+                    return service.allocateBay("T002", "BAY_01");
+                } catch (IllegalArgumentException exception) {
+                    return exception.getMessage();
+                }
             });
 
             start.countDown();
@@ -135,6 +156,7 @@ class ResourceServiceTest {
             assertEquals(TransportState.WAITING, waiting.getState());
             assertNull(waiting.getBayId());
             assertEquals(List.of(success), events);
+            assertEquals(events, notifications);
         } finally {
             pool.shutdownNow();
         }
@@ -160,6 +182,7 @@ class ResourceServiceTest {
         // Two allocations and one exchange.
         assertEquals(3, events.size());
         assertEquals(result, events.get(2));
+        assertEquals(events, notifications);
     }
 
     @Test
@@ -168,14 +191,16 @@ class ResourceServiceTest {
         service.allocateBay("T002", "BAY_02");
         second.transitionTo(TransportState.SERVICING);
 
-        String result = service.exchangeBays("T001", "T002");
-
-        assertEquals("Both transports must be DOCKED or READY", result);
+        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class,
+                () -> service.exchangeBays("T001", "T002"));
+        assertEquals("Both transports must be DOCKED or READY",
+                exception.getMessage());
         assertEquals("BAY_01", first.getBayId());
         assertEquals("BAY_02", second.getBayId());
         assertEquals("T001", bay.getTransportId());
         assertEquals("T002", secondBay.getTransportId());
         assertEquals(2, events.size());
+        assertEquals(events, notifications);
     }
 
     @Test
@@ -190,31 +215,56 @@ class ResourceServiceTest {
         assertEquals(0, added.getCargoQuantity());
         assertEquals("2026-11-10T17:00", added.getDepartureTime());
         assertEquals(List.of(result), events);
+        assertEquals(events, notifications);
     }
 
     @Test
     void duplicateId() {
         service.addTransport("T003", 80, "2026-11-10T17:00");
-        String result = service.addTransport("T003", 200, "2026-11-10T19:00");
 
-        assertEquals("Transport already exists: T003", result);
+        IllegalArgumentException exception = assertThrows(
+                IllegalArgumentException.class,
+                () -> service.addTransport(
+                        "T003", 200, "2026-11-10T19:00"));
+
+        assertEquals("Transport already exists: T003", exception.getMessage());
         assertEquals(80, registry.get("T003").getCapacity());
-        assertEquals("2026-11-10T17:00", registry.get("T003").getDepartureTime());
+        assertEquals(
+                "2026-11-10T17:00",
+                registry.get("T003").getDepartureTime());
+
         assertEquals(List.of("Added transport T003"), events);
+        assertEquals(events, notifications);
     }
 
     @Test
     void invalidTransport() {
-        assertEquals("Invalid transport ID",
-                service.addTransport("T 003", 80, "2026-11-10T17:00"));
-        assertEquals("Capacity must be greater than zero",
-                service.addTransport("T003", 0, "2026-11-10T17:00"));
-        assertEquals("Invalid departure time",
-                service.addTransport("T003", 80, "tomorrow"));
+        IllegalArgumentException invalidId = assertThrows(
+                IllegalArgumentException.class,
+                () -> service.addTransport(
+                        "T 003", 80, "2026-11-10T17:00"));
+
+        assertEquals("Invalid transport ID", invalidId.getMessage());
+
+        IllegalArgumentException invalidCapacity = assertThrows(
+                IllegalArgumentException.class,
+                () -> service.addTransport(
+                        "T003", 0, "2026-11-10T17:00"));
+
+        assertEquals(
+                "Capacity must be greater than zero",
+                invalidCapacity.getMessage());
+
+        IllegalArgumentException invalidTime = assertThrows(
+                IllegalArgumentException.class,
+                () -> service.addTransport("T003", 80, "tomorrow"));
+
+        assertEquals("Invalid departure time", invalidTime.getMessage());
 
         // Only the two transports from the test setup should exist.
         assertEquals(2, registry.getAll().size());
         assertEquals(List.of(), events);
+        assertEquals(List.of(), notifications);
     }
 
     @Test
@@ -229,6 +279,7 @@ class ResourceServiceTest {
         assertEquals(TeamState.BUSY, team.getState());
         assertEquals("T001", team.getTransportId());
         assertEquals(List.of("Allocated BAY_01 to T001", result), events);
+        assertEquals(events, notifications);
     }
 
     @Test
@@ -239,6 +290,7 @@ class ResourceServiceTest {
         String result = service.completeMaintenance("T001");
 
         assertEquals("Completed maintenance on T001 and released TEAM_A", result);
+
         assertEquals(TransportState.READY, first.getState());
         assertNull(first.getTeamId());
         assertEquals(TeamState.AVAILABLE, team.getState());
@@ -247,8 +299,9 @@ class ResourceServiceTest {
         // The transport keeps its bay until departure.
         assertEquals("BAY_01", first.getBayId());
         assertEquals("T001", bay.getTransportId());
-        assertEquals(List.of("Allocated BAY_01 to T001", "Assigned TEAM_A to T001", result),
-                events);
+
+        assertEquals(List.of("Allocated BAY_01 to T001", "Assigned TEAM_A to T001", result), events);
+        assertEquals(events, notifications);
     }
 
     @Test
@@ -262,12 +315,22 @@ class ResourceServiceTest {
         try {
             Future<String> firstRequest = pool.submit(() -> {
                 start.await();
-                return service.assignTeam("T001", "TEAM_A");
+
+                try {
+                    return service.assignTeam("T001", "TEAM_A");
+                } catch (IllegalArgumentException exception) {
+                    return exception.getMessage();
+                }
             });
 
             Future<String> secondRequest = pool.submit(() -> {
                 start.await();
-                return service.assignTeam("T002", "TEAM_A");
+
+                try {
+                    return service.assignTeam("T002", "TEAM_A");
+                } catch (IllegalArgumentException exception) {
+                    return exception.getMessage();
+                }
             });
 
             start.countDown();
@@ -299,6 +362,7 @@ class ResourceServiceTest {
             // Two bay allocations and one successful team assignment.
             assertEquals(3, events.size());
             assertEquals(success, events.get(2));
+            assertEquals(events, notifications);
         } finally {
             pool.shutdownNow();
         }
@@ -309,16 +373,21 @@ class ResourceServiceTest {
         service.allocateBay("T001", "BAY_01");
 
         assertEquals("BAY_01 OCCUPIED (T001), BAY_02 AVAILABLE", service.viewBays());
+        // Viewing bays should not send another notification.
+        assertEquals(List.of("Allocated BAY_01 to T001"), notifications);
     }
 
     @Test
     void viewTeams() {
         assertEquals("TEAM_A AVAILABLE", service.viewTeams());
+        assertEquals(List.of(), notifications);
 
         service.allocateBay("T001", "BAY_01");
         assertEquals("Assigned TEAM_A to T001", service.assignTeam("T001", "TEAM_A"));
 
         assertEquals("TEAM_A BUSY (T001)", service.viewTeams());
+        // Viewing teams should not send another notification.
+        assertEquals(List.of("Allocated BAY_01 to T001", "Assigned TEAM_A to T001"), notifications);
     }
 
     @Test
@@ -333,6 +402,7 @@ class ResourceServiceTest {
         assertEquals(TransportState.READY, first.getState());
         assertEquals("BAY_01", first.getBayId());
         assertEquals("T001", bay.getTransportId());
+        assertEquals(3, notifications.size());
 
         service.checkDepartures(departure);
         assertEquals(TransportState.DEPARTED, first.getState());
@@ -340,6 +410,7 @@ class ResourceServiceTest {
         assertEquals(BayState.AVAILABLE, bay.getState());
         assertNull(bay.getTransportId());
 
+        // Checking again must not log or notify a second departure.
         service.checkDepartures(departure.plusSeconds(1));
         assertEquals(List.of(
                 "Allocated BAY_01 to T001",
@@ -347,6 +418,8 @@ class ResourceServiceTest {
                 "Completed maintenance on T001 and released TEAM_A",
                 "Departed T001 and released BAY_01"
         ), events);
+
+        assertEquals(events, notifications);
     }
 
     @Test
@@ -362,6 +435,7 @@ class ResourceServiceTest {
         assertEquals("TEAM_A", first.getTeamId());
         assertEquals("T001", team.getTransportId());
         assertEquals(List.of("Allocated BAY_01 to T001", "Assigned TEAM_A to T001"), events);
+        assertEquals(events, notifications);
     }
 
     @Test
@@ -369,7 +443,10 @@ class ResourceServiceTest {
         service.allocateBay("T001", "BAY_01");
         service.assignTeam("T001", "TEAM_A");
         service.completeMaintenance("T001");
-        events.clear(); // Only check events from the two competing operations.
+
+        // Only check messages from the two competing operations.
+        events.clear();
+        notifications.clear();
 
         LocalDateTime departure = LocalDateTime.parse("2026-11-10T14:00");
         ExecutorService pool = Executors.newFixedThreadPool(2);
@@ -412,6 +489,10 @@ class ResourceServiceTest {
                 assertEquals(0, first.getCargoQuantity());
                 assertEquals(List.of(departed), events);
             }
+
+            // Cargo notifications belong to TransportCommandHandler.
+            // This test calls TransportService directly.
+            assertEquals(List.of(departed), notifications);
         } finally {
             pool.shutdownNow();
         }

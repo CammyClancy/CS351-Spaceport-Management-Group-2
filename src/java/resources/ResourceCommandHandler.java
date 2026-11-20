@@ -60,50 +60,83 @@ public class ResourceCommandHandler implements CommandHandler {
         int capacity = request.getPositiveNumber(1);
         String departureTime = request.getArgument(2);
 
-        String message = resources.addTransport(transportId, capacity, departureTime);
-        return result(message, "Added transport ");
+        try {
+            String message = resources.addTransport(
+                    transportId, capacity, departureTime);
+            return Response.ok(message);
+        } catch (IllegalArgumentException exception) {
+            return Response.error(exception.getMessage());
+        }
     }
 
     private Response handleAllocateBay(Request request) {
         String transportId = request.getArgument(0);
         String bayId = request.getArgument(1);
 
-        String message = resources.allocateBay(transportId, bayId);
-        return result(message, "Allocated ");
+        try {
+            String message = resources.allocateBay(transportId, bayId);
+            return Response.ok(message);
+        } catch (IllegalArgumentException exception) {
+            return Response.error(exception.getMessage());
+        }
     }
 
     private Response handleExchangeBays(Request request) {
         String firstTransportId = request.getArgument(0);
         String secondTransportId = request.getArgument(1);
 
-        String message = resources.exchangeBays(firstTransportId, secondTransportId);
-        return result(message, "Exchanged ");
+        try {
+            String message = resources.exchangeBays(
+                    firstTransportId, secondTransportId);
+            return Response.ok(message);
+        } catch (IllegalArgumentException exception) {
+            return Response.error(exception.getMessage());
+        }
     }
 
     private Response handleCloseBay(Request request) {
         String bayId = request.getArgument(0);
-        String message = resources.closeBay(bayId);
-        return result(message, "Closed ");
+
+        try {
+            String message = resources.closeBay(bayId);
+            return Response.ok(message);
+        } catch (IllegalArgumentException exception) {
+            return Response.error(exception.getMessage());
+        }
     }
 
     private Response handleReopenBay(Request request) {
         String bayId = request.getArgument(0);
-        String message = resources.reopenBay(bayId);
-        return result(message, "Reopened ");
+
+        try {
+            String message = resources.reopenBay(bayId);
+            return Response.ok(message);
+        } catch (IllegalArgumentException exception) {
+            return Response.error(exception.getMessage());
+        }
     }
 
     private Response handleAssignTeam(Request request) {
         String transportId = request.getArgument(0);
         String teamId = request.getArgument(1);
 
-        String message = resources.assignTeam(transportId, teamId);
-        return result(message, "Assigned ");
+        try {
+            String message = resources.assignTeam(transportId, teamId);
+            return Response.ok(message);
+        } catch (IllegalArgumentException exception) {
+            return Response.error(exception.getMessage());
+        }
     }
 
     private Response handleCompleteMaintenance(Request request) {
         String transportId = request.getArgument(0);
-        String message = resources.completeMaintenance(transportId);
-        return result(message, "Completed maintenance ");
+
+        try {
+            String message = resources.completeMaintenance(transportId);
+            return Response.ok(message);
+        } catch (IllegalArgumentException exception) {
+            return Response.error(exception.getMessage());
+        }
     }
 
     private Response handleViewBays() {
@@ -116,12 +149,5 @@ public class ResourceCommandHandler implements CommandHandler {
 
     private Response handleViewLog() {
         return Response.ok("Event log", eventLog.getEntries());
-    }
-
-    private Response result(String message, String successStart) {
-        if (message.startsWith(successStart)) {
-            return Response.ok(message);
-        }
-        return Response.error(message);
     }
 }

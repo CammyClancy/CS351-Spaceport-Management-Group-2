@@ -1,6 +1,8 @@
 package transport;
 
 import java.io.Serializable;
+import java.io.IOException;
+import java.io.ObjectOutputStream;
 
 // Represents one space transport.
 // Holds its id, state, bay, team, capacity, cargo and departure time.
@@ -101,5 +103,10 @@ public class Transport implements Serializable {
     @Override
     public String toString() {
         return id + " " + state + " cargo=" + cargoQuantity + "/" + capacity;
+    }
+
+    private synchronized void writeObject(ObjectOutputStream output)
+            throws IOException {
+        output.defaultWriteObject();
     }
 }

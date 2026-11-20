@@ -22,14 +22,10 @@ class SpaceportDataTest {
         SpaceportEventLog log = new SpaceportEventLog();
         DockingBay bay = new DockingBay("BAY_01");
         MaintenanceTeam team = new MaintenanceTeam("TEAM_A");
-
-        SpaceportData data = new SpaceportData(
-                registry, List.of(bay), List.of(team), log);
-
+        SpaceportData data = new SpaceportData(registry, List.of(bay), List.of(team), log);
         TransportService cargo = new TransportService(registry, log);
-        ResourceService service = new ResourceService(
-                data.getBays(), data.getTeams(), registry, cargo, log);
-
+        ResourceService service = new ResourceService(data.getBays(), data.getTeams(), registry,
+                log, message -> {});
         service.addTransport("T001", 100, "2026-11-10T14:00");
         service.allocateBay("T001", "BAY_01");
         cargo.loadCargo("T001", 25);
@@ -39,7 +35,8 @@ class SpaceportDataTest {
         assertEquals(4, originalEvents.size());
 
         Path file = folder.resolve("spaceport.ser");
-        data.save(file);
+        service.save(file, data);
+
         SpaceportData loaded = SpaceportData.load(file);
 
         Transport transport = loaded.getRegistry().get("T001");

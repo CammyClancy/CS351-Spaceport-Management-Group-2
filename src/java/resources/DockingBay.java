@@ -1,6 +1,8 @@
 package resources;
 
 import java.io.Serializable;
+import java.io.IOException;
+import java.io.ObjectOutputStream;
 
 public class DockingBay implements Serializable {
     private static final long serialVersionUID = 1L;
@@ -51,4 +53,8 @@ public class DockingBay implements Serializable {
         return true;
     }
 
+    private synchronized void writeObject(ObjectOutputStream output)
+            throws IOException {
+        output.defaultWriteObject();
+    }
 }

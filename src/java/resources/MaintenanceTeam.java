@@ -1,6 +1,8 @@
 package resources;
 
 import java.io.Serializable;
+import java.io.IOException;
+import java.io.ObjectOutputStream;
 
 public class MaintenanceTeam implements Serializable {
     private static final long serialVersionUID = 1L;
@@ -33,5 +35,10 @@ public class MaintenanceTeam implements Serializable {
 
     synchronized void release() {
         transportId = null;
+    }
+
+    private synchronized void writeObject(ObjectOutputStream output)
+            throws IOException {
+        output.defaultWriteObject();
     }
 }
