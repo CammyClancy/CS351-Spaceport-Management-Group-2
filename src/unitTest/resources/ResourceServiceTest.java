@@ -17,6 +17,7 @@ import transport.TransportState;
 import transport.collaborator.EventLogger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
@@ -496,5 +497,169 @@ class ResourceServiceTest {
         } finally {
             pool.shutdownNow();
         }
+    }
+    @Test
+    void closeAndAllocateRaceLeavesConsistentState()
+            throws Exception {
+
+        ExecutorService pool =
+                Executors.newFixedThreadPool(2);
+
+        CountDownLatch start =
+                new CountDownLatch(1);
+
+        Future<String> close =
+                pool.submit(() -> {
+                    start.await();
+
+                    try {
+                        return service.closeBay("BAY_01");
+                    } catch (IllegalArgumentException exception) {
+                        return exception.getMessage();
+                    }
+                });
+
+        Future<String> allocate =
+                pool.submit(() -> {
+                    start.await();
+
+                    try {
+                        return service.allocateBay(
+                                "T001",
+                                "BAY_01");
+                    } catch (IllegalArgumentException exception) {
+                        return exception.getMessage();
+                    }
+                });
+
+        start.countDown();
+
+        String closeResult =
+                close.get(5, TimeUnit.SECONDS);
+
+        String allocateResult =
+                allocate.get(5, TimeUnit.SECONDS);
+
+        pool.shutdownNow();
+
+        boolean closeSucceeded =
+                closeResult.equals("Closed BAY_01");
+
+        boolean allocationSucceeded =
+                allocateResult.equals(
+                        "Allocated BAY_01 to T001");
+
+        assertTrue(
+                closeSucceeded ^ allocationSucceeded);
+
+        if (closeSucceeded) {
+            assertEquals(
+                    BayState.CLOSED,
+                    bay.getState());
+
+            assertEquals(
+                    TransportState.WAITING,
+                    first.getState());
+
+            assertNull(first.getBayId());
+        } else {
+            assertEquals(
+                    BayState.OCCUPIED,
+                    bay.getState());
+
+            assertEquals(
+                    "T001",
+                    bay.getTransportId());
+
+            assertEquals(
+                    TransportState.DOCKED,
+                    first.getState());
+
+            assertEquals(
+                    "BAY_01",
+                    first.getBayId());
+        }
+    }
+    @Test
+    void departureMonitorMovesReadyTransportToDeparted()
+            throws Exception {
+
+        Transport transport =
+                new Transport(
+                        "T001",
+                        100,
+                        "2000-01-01T00:00");
+
+        TransportRegistry localRegistry =
+                new TransportRegistry();
+
+        localRegistry.add(transport);
+
+        DockingBay localBay =
+                new DockingBay("BAY_01");
+
+        MaintenanceTeam localTeam =
+                new MaintenanceTeam("TEAM_A");
+
+        List<String> events =
+                Collections.synchronizedList(
+                        new ArrayList<>());
+
+        ResourceService localService =
+                new ResourceService(
+                        List.of(localBay),
+                        List.of(localTeam),
+                        localRegistry,
+                        events::add,
+                        message -> {});
+
+        localService.allocateBay(
+                "T001",
+                "BAY_01");
+
+        localService.assignTeam(
+                "T001",
+                "TEAM_A");
+
+        localService.completeMaintenance(
+                "T001");
+
+        DepartureMonitor monitor =
+                new DepartureMonitor(localService);
+
+        Thread thread =
+                new Thread(monitor);
+
+        thread.start();
+
+        long deadline =
+                System.currentTimeMillis() + 5000;
+
+        while (transport.getState()
+                != TransportState.DEPARTED
+                && System.currentTimeMillis() < deadline) {
+
+            Thread.sleep(50);
+        }
+
+        thread.interrupt();
+        thread.join(2000);
+
+        assertEquals(
+                TransportState.DEPARTED,
+                transport.getState());
+
+        assertEquals(
+                BayState.AVAILABLE,
+                localBay.getState());
+
+        assertEquals(
+                null,
+                transport.getBayId());
+
+        assertTrue(
+                events.stream()
+                        .anyMatch(event ->
+                                event.contains("Departed T001")));
     }
 }
