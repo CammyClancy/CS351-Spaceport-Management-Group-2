@@ -1,5 +1,6 @@
 package transport;
 
+import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 import transport.collaborator.EventLogger;
 
@@ -125,5 +126,97 @@ class TransportServiceConcurrencyTest {
         pool.shutdown();
 
         assertEquals(500 - expectedRemoved, t.getCargoQuantity());
+    }
+    @Test
+    void oppositeTransfersDoNotDeadlock()
+            throws Exception {
+
+        Transport first =
+                setupTransportWithCargo(500);
+
+        Transport second =
+                new Transport(
+                        "T002",
+                        1000,
+                        "2026-11-03T14:30");
+
+        second.transitionTo(TransportState.DOCKED);
+
+        TransportRegistry registry =
+                new TransportRegistry();
+
+        registry.add(first);
+        registry.add(second);
+
+        CountingEventLogger logger =
+                new CountingEventLogger();
+
+        TransportService service =
+                new TransportService(
+                        registry,
+                        logger);
+
+        ExecutorService pool =
+                Executors.newFixedThreadPool(2);
+
+        CountDownLatch start =
+                new CountDownLatch(1);
+
+        Future<?> firstTransfers =
+                pool.submit(() -> {
+                    start.await();
+
+                    for (int i = 0; i < 100; i++) {
+                        try {
+                            service.transferCargo(
+                                    "T001",
+                                    "T002",
+                                    1);
+                        } catch (IllegalArgumentException ignored) {
+                        }
+                    }
+
+                    return null;
+                });
+
+        Future<?> secondTransfers =
+                pool.submit(() -> {
+                    start.await();
+
+                    for (int i = 0; i < 100; i++) {
+                        try {
+                            service.transferCargo(
+                                    "T002",
+                                    "T001",
+                                    1);
+                        } catch (IllegalArgumentException ignored) {
+                        }
+                    }
+
+                    return null;
+                });
+
+        start.countDown();
+
+        firstTransfers.get(10, TimeUnit.SECONDS);
+        secondTransfers.get(10, TimeUnit.SECONDS);
+
+        pool.shutdownNow();
+
+        assertEquals(
+                500,
+                first.getCargoQuantity()
+                        + second.getCargoQuantity());
+
+        Assertions.assertTrue(first.getCargoQuantity() >= 0);
+        Assertions.assertTrue(second.getCargoQuantity() >= 0);
+
+        Assertions.assertTrue(
+                first.getCargoQuantity()
+                        <= first.getCapacity());
+
+        Assertions.assertTrue(
+                second.getCargoQuantity()
+                        <= second.getCapacity());
     }
 }
